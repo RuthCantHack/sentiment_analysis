@@ -74,33 +74,62 @@ df, dataset_path = load_dataset()
 # ---- Model builder (cached) ----
 @st.cache_resource(show_spinner=True)
 def build_model(df: pd.DataFrame):
-    if df.empty or not set(["text","label"]).issubset(df.columns):
+    # Basic validation
+    required = {"text", "label"}
+    if df is None or df.empty or not required.issubset(df.columns):
         return None, None
 
-    # Train/validation split
+    # Normalize labels (robust to variants)
+    label_map = {
+        "neg": "negative", "negative": "negative", "NEGATIVE": "negative",
+        "neu": "neutral",  "neutral": "neutral",   "NEUTRAL": "neutral",
+        "pos": "positive", "positive": "positive", "POSITIVE": "positive",
+    }
+    df = df.copy()
+    df["label"] = df["label"].astype(str).map(lambda x: label_map.get(x.strip(), x.strip()))
+
+    # Train/validation split (stratify only if we truly have >1 class)
+    strat = df["label"] if df["label"].nunique() > 1 else None
     X_train, X_val, y_train, y_val = train_test_split(
         df["text"].astype(str),
         df["label"].astype(str),
         test_size=0.2,
         random_state=42,
-        stratify=df["label"].astype(str) if df["label"].nunique() > 1 else None
+        stratify=strat
     )
 
-    # Stronger text features + class balancing + calibrated probabilities
-    model = Pipeline([
-        ("tfidf", TfidfVectorizer(
-            ngram_range=(1,2),         # unigrams + bigrams
-            min_df=2,                  # ignore very rare tokens
-            max_df=0.9,                # drop super common tokens
-            sublinear_tf=True,         # log(1 + tf)
-            lowercase=True,
-            strip_accents="unicode",
-        )),
-        ("clf", CalibratedClassifierCV(
-            base_estimator=LinearSVC(class_weight="balanced"),
-            cv=5
-        ))
-    ])
+    # --- Vectorizer: a bit stronger for small datasets ---
+    tfidf = TfidfVectorizer(
+        ngram_range=(1, 2),
+        min_df=1,              # keep rare tokens; dataset is small
+        max_df=0.95,
+        stop_words="english",
+        sublinear_tf=True,
+        lowercase=True,
+        strip_accents="unicode",
+    )
+
+    # --- Base classifier ---
+    base_svm = LinearSVC(C=1.0, class_weight="balanced")
+
+    # --- Decide on calibration safely ---
+    # If any class in TRAIN set has too few examples, reduce cv. If still too low, skip calibration.
+    vc = y_train.value_counts()
+    min_class = int(vc.min()) if not vc.empty else 0
+
+    # We need at least 2 samples per class for cv>=2
+    if min_class >= 3:
+        safe_cv = min(5, min_class)  # e.g., if min_class=3 → cv=3
+        clf = CalibratedClassifierCV(estimator=base_svm, cv=safe_cv, method="sigmoid")
+        model = Pipeline([("tfidf", tfidf), ("clf", clf)])
+    elif min_class == 2:
+        clf = CalibratedClassifierCV(estimator=base_svm, cv=2, method="sigmoid")
+        model = Pipeline([("tfidf", tfidf), ("clf", clf)])
+    else:
+        # Not enough data to calibrate reliably; use plain LinearSVC (no predict_proba)
+        model = Pipeline([("tfidf", tfidf), ("clf", base_svm)])
+
+    # Train
     model.fit(X_train, y_train)
 
     # Evaluate
@@ -115,66 +144,6 @@ def build_model(df: pd.DataFrame):
         "f1_macro": f1_macro,
         "report": report,
         "confusion_matrix": cm,
-        "labels": sorted(df["label"].astype(str).unique().tolist())
+        "labels": sorted(df["label"].unique().tolist())
     }
     return model, metrics
-
-model, metrics = build_model(df)
-
-# ---- UI ----
-st.title("🤖 Review Autocorrect + Sentiment (SVM, dataset-trained)")
-if dataset_path:
-    st.caption(f"Training data: `{dataset_path}`  |  {len(df)} rows")
-else:
-    st.error("Could not find `sentiment_dataset.csv`. Place it next to the app or in the working directory.")
-    st.stop()
-
-# Show some metrics
-if metrics:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Accuracy (val)", f"{metrics['accuracy']:.3f}")
-    with col2:
-        st.metric("F1 (macro, val)", f"{metrics['f1_macro']:.3f}")
-    with st.expander("Classification report"):
-        st.text(metrics["report"])
-    with st.expander("Confusion matrix"):
-        import numpy as np
-        import pandas as pd
-        labels = metrics["labels"]
-        cm_df = pd.DataFrame(metrics["confusion_matrix"], index=labels, columns=labels)
-        st.dataframe(cm_df, use_container_width=True)
-
-st.divider()
-st.subheader("Try a review")
-
-review = st.chat_input("Write your review here and press Enter…", key="review_input_box")
-
-if review:
-    corrected, changes = autocorrect_text(review)
-    with st.chat_message("user"):
-        st.write(review)
-
-    st.subheader("Corrected review")
-    st.write(corrected)
-    st.subheader("Autocorrect details")
-    st.markdown(highlight_changes(changes))
-
-    if model is None:
-        st.error("Model not available (dataset missing or invalid).")
-    else:
-        pred = model.predict([corrected])[0]
-        # show probabilities if available
-        proba = None
-        try:
-            import numpy as np
-            proba = model.predict_proba([corrected])[0]
-            labels = model.classes_.tolist()
-            prob_df = pd.DataFrame({"label": labels, "probability": proba})
-            prob_df = prob_df.sort_values("probability", ascending=False)
-            st.subheader("Sentiment result")
-            st.success(f"Prediction: **{pred}**")
-            st.dataframe(prob_df, use_container_width=True)
-        except Exception:
-            st.subheader("Sentiment result")
-            st.success(f"Prediction: **{pred}**")
