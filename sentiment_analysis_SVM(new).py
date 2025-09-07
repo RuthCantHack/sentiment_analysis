@@ -62,12 +62,6 @@ def highlight_changes(changed_pairs):
 # ---------------- Dataset loader (Jupyter-safe) ----------------
 @st.cache_data(show_spinner=False)
 def load_dataset():
-    # Optional UI uploader (uncomment if you want interactive uploads)
-    # uploaded = st.file_uploader("Upload sentiment_dataset.csv", type=["csv"])
-    # if uploaded is not None:
-    #     df = pd.read_csv(uploaded)
-    #     return normalize_labels(df), "uploaded_via_ui"
-
     # Determine a reliable "here" even if __file__ is missing
     try:
         here = Path(__file__).parent
@@ -75,10 +69,10 @@ def load_dataset():
         here = Path.cwd()
 
     candidates = [
-        here / "sentiment_dataset.csv",
-        Path.cwd() / "sentiment_dataset.csv",
-        Path("sentiment_dataset.csv"),
-        Path("/mount/src/sentiment_analysis/sentiment_dataset.csv"),  # common on Streamlit Cloud
+        here / "sentiment_dataset(1).csv",
+        Path.cwd() / "sentiment_dataset(1).csv",
+        Path("sentiment_dataset(1).csv"),
+        Path("/mount/src/sentiment_analysis/sentiment_dataset(1).csv"),  # common on Streamlit Cloud
     ]
     for p in candidates:
         if p.exists():
@@ -172,7 +166,7 @@ st.title("🤖 Review Autocorrect + Sentiment (SVM, dataset-trained)")
 if dataset_path:
     st.caption(f"Training data: `{dataset_path}`  |  rows: {len(df)}  |  class counts: {df['label'].value_counts().to_dict()}")
 else:
-    st.error("Could not find `sentiment_dataset.csv`. Place it next to the app or upload via the UI.")
+    st.error("Could not find `sentiment_dataset(1).csv`. Place it next to the app or upload via the UI.")
     st.stop()
 
 if metrics:
