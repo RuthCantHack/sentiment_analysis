@@ -63,19 +63,15 @@ def censor_ui_only(text: str, patterns, track: bool = False):
     hits = []
     def _rep(m):
         token = m.group(0); hits.append(token)
-        return "*" * len(token)
+        return "#" * len(token)
     out = text
     for patt in patterns:
-        out = patt.sub(_rep if track else (lambda m: "*" * len(m.group(0))), out)
+        out = patt.sub(_rep if track else (lambda m: "#" * len(m.group(0))), out)
     return (out, hits) if track else out
 
 # ---------------- SVM-based token censor ----------------
 def censor_with_svm_tokens(text: str, model) -> tuple[str, list[str]]:
-    """Use the trained model to predict each token's label and mask negatives.
-
-    Splits on word boundaries, preserves punctuation/spacing.
-    Returns (censored_text, censored_tokens).
-    """
+    """Predict each token's label with SVM and mask negatives using '#'."""
     if model is None or not hasattr(model, "predict"):
         return text, []
 
@@ -91,7 +87,7 @@ def censor_with_svm_tokens(text: str, model) -> tuple[str, list[str]]:
         except Exception:
             pred_label = None
         if pred_label == "negative":
-            pieces.append("*" * len(token))
+            pieces.append("#" * len(token))
             censored_tokens.append(token)
         else:
             pieces.append(token)
@@ -120,7 +116,7 @@ def build_model(df: pd.DataFrame):
     tfidf = TfidfVectorizer(
         ngram_range=(1,2),
         min_df=1, max_df=0.95,
-        stop_words=None,  # preserve sentiment words and negations
+        stop_words=None,
         sublinear_tf=True, lowercase=True, strip_accents="unicode",
     )
 
