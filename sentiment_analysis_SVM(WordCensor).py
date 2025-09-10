@@ -69,6 +69,36 @@ def censor_ui_only(text: str, patterns, track: bool = False):
         out = patt.sub(_rep if track else (lambda m: "*" * len(m.group(0))), out)
     return (out, hits) if track else out
 
+# ---------------- SVM-based token censor ----------------
+def censor_with_svm_tokens(text: str, model) -> tuple[str, list[str]]:
+    """Use the trained model to predict each token's label and mask negatives.
+
+    Splits on word boundaries, preserves punctuation/spacing.
+    Returns (censored_text, censored_tokens).
+    """
+    if model is None or not hasattr(model, "predict"):
+        return text, []
+
+    censored_tokens = []
+    pieces = []
+    last = 0
+    for m in re.finditer(r"\b\w+\b", text):
+        start, end = m.span()
+        token = m.group(0)
+        pieces.append(text[last:start])
+        try:
+            pred_label = model.predict([token])[0]
+        except Exception:
+            pred_label = None
+        if pred_label == "negative":
+            pieces.append("*" * len(token))
+            censored_tokens.append(token)
+        else:
+            pieces.append(token)
+        last = end
+    pieces.append(text[last:])
+    return "".join(pieces), censored_tokens
+
 # ---------------- Model builder (TF-IDF + SVM) ----------------
 @st.cache_resource(show_spinner=True)
 def build_model(df: pd.DataFrame):
@@ -90,7 +120,7 @@ def build_model(df: pd.DataFrame):
     tfidf = TfidfVectorizer(
         ngram_range=(1,2),
         min_df=1, max_df=0.95,
-        stop_words="english",
+        stop_words=None,  # preserve sentiment words and negations
         sublinear_tf=True, lowercase=True, strip_accents="unicode",
     )
 
@@ -149,7 +179,10 @@ review = st.chat_input("Write your review here and press Enter…", key="review_
 if review:
     # ---------- DISPLAY BRANCH (censored) ----------
     review_clean = simple_clean(review)
-    corrected_display, hits = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
+    if model is not None:
+        corrected_display, hits = censor_with_svm_tokens(review_clean, model)
+    else:
+        corrected_display, hits = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
 
     # ---------- MODEL BRANCH (uncensored) ----------
     text_for_model = simple_clean(review)
