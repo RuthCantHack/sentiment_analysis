@@ -160,7 +160,7 @@ if review:
 
     # Show corrected (censored) text to user
     st.subheader("Corrected review (display)")
-    st.write(corrected_display)
+    st.text(corrected_display)
 
     # List of censored tokens
     if hits:
