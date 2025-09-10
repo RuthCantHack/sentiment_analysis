@@ -59,12 +59,23 @@ CENSOR_PATTERNS = [
     re.compile(rf"\b{_leetify(w)}\b", flags=re.IGNORECASE) for w in SWEAR_WORDS
 ]
 
-def censor_swear_words(text: str) -> str:
-    """Replace each detected swear with a same-length string of '*'."""
+def censor_swear_words(text: str, track: bool = False):
+    """Replace detected swear words with '*'"""
+    hits = []
+
+    def _replace(m):
+        token = m.group(0)
+        hits.append(token)
+        return "*" * len(token)
+
     out = text
-    for w, patt in zip(SWEAR_WORDS, CENSOR_PATTERNS):
-        out = patt.sub(lambda m: "*" * len(m.group(0)), out)
+    for patt in CENSOR_PATTERNS:
+        out = patt.sub(_replace if track else (lambda m: "*" * len(m.group(0))), out)
+
+    if track:
+        return out, hits
     return out
+
 
 def autocorrect_text(text: str):
     tokens = WORD_RE.findall(text or "")
@@ -214,22 +225,38 @@ st.subheader("Try a review")
 review = st.chat_input("Write your review here and press Enter…", key="review_input_box")
 
 if review:
-    # 1) Clean, then CENSOR, then autocorrect  (required by your project)
+    # 1) Clean
     review_clean = simple_clean(review)
-    review_censored = censor_swear_words(review_clean)   # <-- NEW step
-    corrected, changes = autocorrect_text(review_censored)
 
-    # 2) Show original in chat style
+    # 2) Censor pass 1 (catches raw swears forms before autocorrect)
+    review_censored_1, censored_hits_1 = censor_swear_words(review_clean, track=True)
+
+    # 3) Autocorrect
+    autocorrected_text, changes = autocorrect_text(review_censored_1)
+
+    # 4) Censor pass 2 
+    corrected, censored_hits_2 = censor_swear_words(autocorrected_text, track=True)
+
+    # 5) Show original in chat style
     with st.chat_message("user"):
         st.write(review)
 
-    # 3) Show corrected text & changes
+    # 6) Show corrected text & details
     st.subheader("Corrected review")
     st.write(corrected)
-    st.subheader("Autocorrect details")
-    st.markdown(highlight_changes(changes))
 
-    # 4) Predict
+    st.subheader("Autocorrect details")
+    if changes:
+        st.markdown("Autocorrections:\n" + "\n".join([f"- **{o}** → **{c}**" for o, c in changes]))
+    else:
+        st.markdown("No spelling changes were needed.")
+
+    # 7) Show censoring details
+    cens_all = censored_hits_1 + censored_hits_2
+    if cens_all:
+        st.caption("Censored tokens detected: " + ", ".join({h for h in cens_all}))
+
+    # 8) Predict on the final censored text
     if model is None:
         st.error("Model not available (dataset missing or invalid).")
     else:
