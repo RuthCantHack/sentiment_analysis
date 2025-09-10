@@ -4,7 +4,6 @@ import streamlit as st
 import pandas as pd
 
 # ML / NLP
-from spellchecker import SpellChecker
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
@@ -13,48 +12,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 
 # ---------------- Page title ----------------
-st.set_page_config(page_title="Sentiment Analysis(SVM + Autocorrect", page_icon="🤖")
+st.set_page_config(page_title="Sentiment Analysis (SVM, no autocorrect)", page_icon="🤖")
 
-# ---------------- Cleaning + autocorrect ----------------
-spell = SpellChecker(language="en")
-WORD_RE = re.compile(r"[A-Za-z']+|[^A-Za-z']")
-
-def _preserve_case(src: str, dst: str) -> str:
-    if src.isupper():
-        return dst.upper()
-    if src[:1].isupper() and src[1:].islower():
-        return dst.capitalize()
-    return dst
-
+# ---------------- Cleaning ----------------
 def simple_clean(s: str) -> str:
     """Collapse whitespace and reduce repeated characters."""
     s = re.sub(r"\s+", " ", s or "").strip()
     s = re.sub(r"(.)\1{2,}", r"\1\1", s)  # "soooo" -> "soo"
     return s
-
-def autocorrect_text(text: str):
-    tokens = WORD_RE.findall(text or "")
-    changed, out = [], []
-    for tok in tokens:
-        if tok.isalpha() and len(tok) > 1:
-            lower = tok.lower()
-            if lower not in spell and lower != "i":
-                cand = spell.correction(lower) or lower
-                if cand != lower:
-                    fixed = _preserve_case(tok, cand)
-                    out.append(fixed); changed.append((tok, fixed))
-                else:
-                    out.append(tok)
-            else:
-                out.append(tok)
-        else:
-            out.append(tok)
-    return "".join(out), changed
-
-def highlight_changes(changed_pairs):
-    if not changed_pairs:
-        return "No spelling changes were needed."
-    return "Autocorrections:\n" + "\n".join(f"- **{o}** → **{c}**" for o, c in changed_pairs)
 
 # ---------------- Dataset loader ----------------
 def normalize_labels(df: pd.DataFrame) -> pd.DataFrame:
@@ -131,7 +96,7 @@ def build_model(df: pd.DataFrame):
 
     base_svm = LinearSVC(C=1.0, class_weight="balanced")
 
-    # Calibrate safely
+
     vc = y_train.value_counts()
     min_class = int(vc.min()) if not vc.empty else 0
     if min_class >= 3:
@@ -160,7 +125,7 @@ def build_model(df: pd.DataFrame):
 df, dataset_path = load_dataset()
 model, metrics = build_model(df)
 
-st.title("🤖 Review Autocorrect + Sentiment (SVM, dataset-trained)")
+st.title("🤖 Review Sentiment (SVM, dataset-trained)")
 if dataset_path:
     st.caption(f"Training data: `{dataset_path}`  |  rows: {len(df)}  |  class counts: {df['label'].value_counts().to_dict()}")
 else:
@@ -184,14 +149,10 @@ review = st.chat_input("Write your review here and press Enter…", key="review_
 if review:
     # ---------- DISPLAY BRANCH (censored) ----------
     review_clean = simple_clean(review)
-    display_step1, hits1 = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
-    display_autocorrected, changes = autocorrect_text(display_step1)
-    corrected_display, hits2 = censor_ui_only(display_autocorrected, CENSOR_PATTERNS, track=True)
+    corrected_display, hits = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
 
     # ---------- MODEL BRANCH (uncensored) ----------
-    model_clean = simple_clean(review)
-    model_autocorrected, _ = autocorrect_text(model_clean)
-    text_for_model = model_autocorrected  # prediction on uncensored autocorrected text
+    text_for_model = simple_clean(review)
 
     # Show original in chat style
     with st.chat_message("user"):
@@ -201,13 +162,9 @@ if review:
     st.subheader("Corrected review (display)")
     st.write(corrected_display)
 
-    st.subheader("Autocorrect details")
-    st.markdown(highlight_changes(changes))
-
     # List of censored tokens
-    cens_all = list(dict.fromkeys(hits1 + hits2))
-    if cens_all:
-        st.caption("Censored tokens: " + ", ".join(cens_all))
+    if hits:
+        st.caption("Censored tokens: " + ", ".join(hits))
 
     # Predict on uncensored text
     if model is None:
