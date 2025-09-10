@@ -177,6 +177,9 @@ if review:
     review_clean = simple_clean(review)
     if model is not None:
         corrected_display, hits = censor_with_svm_tokens(review_clean, model)
+        corrected_display, hits_regex = censor_ui_only(corrected_display, CENSOR_PATTERNS, track=True)
+        # merge and dedupe hits
+        hits = list(dict.fromkeys(hits + hits_regex))
     else:
         corrected_display, hits = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
 
