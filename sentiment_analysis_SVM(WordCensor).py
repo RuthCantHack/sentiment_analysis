@@ -36,8 +36,7 @@ def simple_clean(s: str) -> str:
 # ---------- NEW: censor swear words with '*' ----------
 # Expand this list as needed for your project rubric.
 SWEAR_WORDS = [
-    "damn", "shit", "fuck", "bitch", "bastard",
-    "asshole", "dick", "crap", "bollocks", "bloody"
+    "shit", "fuck", "bitch", "bastard", "asshole", "dick", "crap"
 ]
 
 # Optional variants (very light leetspeak handling)
