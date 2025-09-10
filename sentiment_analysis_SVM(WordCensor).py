@@ -75,10 +75,10 @@ def load_dataset():
     except NameError:
         here = Path.cwd()
     candidates = [
-        here / "sentiment_dataset (1).csv",
-        Path.cwd() / "sentiment_dataset (1).csv",
-        Path("sentiment_dataset (1).csv"),
-        Path("/mount/src/sentiment_analysis/sentiment_dataset (1).csv"),
+        here / "sentiment_dataset(1).csv",
+        Path.cwd() / "sentiment_dataset(1).csv",
+        Path("sentiment_dataset(1).csv"),
+        Path("/mount/src/sentiment_analysis/sentiment_dataset(1).csv"),
     ]
     for p in candidates:
         if p.exists():
