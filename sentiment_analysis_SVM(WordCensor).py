@@ -63,37 +63,11 @@ def censor_ui_only(text: str, patterns, track: bool = False):
     hits = []
     def _rep(m):
         token = m.group(0); hits.append(token)
-        return "#" * len(token)
+        return "*" * len(token)
     out = text
     for patt in patterns:
-        out = patt.sub(_rep if track else (lambda m: "#" * len(m.group(0))), out)
+        out = patt.sub(_rep if track else (lambda m: "*" * len(m.group(0))), out)
     return (out, hits) if track else out
-
-# ---------------- SVM-based token censor ----------------
-def censor_with_svm_tokens(text: str, model) -> tuple[str, list[str]]:
-    """Predict each token's label with SVM and mask negatives using '#'."""
-    if model is None or not hasattr(model, "predict"):
-        return text, []
-
-    censored_tokens = []
-    pieces = []
-    last = 0
-    for m in re.finditer(r"\b\w+\b", text):
-        start, end = m.span()
-        token = m.group(0)
-        pieces.append(text[last:start])
-        try:
-            pred_label = model.predict([token])[0]
-        except Exception:
-            pred_label = None
-        if pred_label == "negative":
-            pieces.append("#" * len(token))
-            censored_tokens.append(token)
-        else:
-            pieces.append(token)
-        last = end
-    pieces.append(text[last:])
-    return "".join(pieces), censored_tokens
 
 # ---------------- Model builder (TF-IDF + SVM) ----------------
 @st.cache_resource(show_spinner=True)
@@ -116,7 +90,7 @@ def build_model(df: pd.DataFrame):
     tfidf = TfidfVectorizer(
         ngram_range=(1,2),
         min_df=1, max_df=0.95,
-        stop_words=None,
+        stop_words="english",
         sublinear_tf=True, lowercase=True, strip_accents="unicode",
     )
 
@@ -175,13 +149,7 @@ review = st.chat_input("Write your review here and press Enter…", key="review_
 if review:
     # ---------- DISPLAY BRANCH (censored) ----------
     review_clean = simple_clean(review)
-    if model is not None:
-        corrected_display, hits = censor_with_svm_tokens(review_clean, model)
-        corrected_display, hits_regex = censor_ui_only(corrected_display, CENSOR_PATTERNS, track=True)
-        # merge and dedupe hits
-        hits = list(dict.fromkeys(hits + hits_regex))
-    else:
-        corrected_display, hits = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
+    corrected_display, hits = censor_ui_only(review_clean, CENSOR_PATTERNS, track=True)
 
     # ---------- MODEL BRANCH (uncensored) ----------
     text_for_model = simple_clean(review)
